@@ -336,7 +336,8 @@ class MhrvTunnelSession(Session):
         # After processing all operations, drain any available data from all sessions
         for i, op in enumerate(ops):
             sid = op.get("sid")
-            if sid and results[i].get("e") is None:  # Only drain if operation was successful
+            # Always drain and return data for referenced sessions, even if op is not a write
+            if sid:
                 drain_result = await self._drain_session_if_available(sid)
                 if drain_result:
                     results[i].update(drain_result)

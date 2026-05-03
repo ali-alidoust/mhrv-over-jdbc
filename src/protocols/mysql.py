@@ -498,7 +498,9 @@ class MhrvMysqlServer:
     async def start(self):
         """Start the MySQL server."""
         session_factory = self.create_session_factory()
-        identity_provider = AcceptAnyIdentityProvider()
+        # Use SimpleIdentityProvider which accepts any username
+        from mysql_mimic.auth import SimpleIdentityProvider
+        identity_provider = SimpleIdentityProvider()
         self.server = MysqlServer(
             session_factory=session_factory,
             identity_provider=identity_provider

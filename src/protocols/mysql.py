@@ -152,6 +152,8 @@ class MhrvTunnelSession(Session):
 
         if op_type == "connect":
             return await self._handle_connect(op)
+        elif op_type == "connect_data":
+            return await self._handle_connect_data(op)
         elif op_type == "data":
             return await self._handle_data(sid, op)
         elif op_type == "close":
@@ -230,6 +232,92 @@ class MhrvTunnelSession(Session):
                 return {"sid": sid}
         except Exception as e:
             logger.error(f"Connect failed: {e}")
+            return {"e": "CONNECT_FAILED"}
+
+    async def _handle_connect_data(self, op: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle connect_data operation (connect + immediate data send)."""
+        host = op.get("host")
+        port = op.get("port")
+        data_b64 = op.get("d")
+        udp = op.get("udp", False)
+
+        if not host or not port:
+            return {"e": "MISSING_HOST_PORT"}
+
+        try:
+            if udp:
+                # Create UDP session
+                sid = f"udp_{len(self.udp_sessions)}"
+                loop = asyncio.get_event_loop()
+
+                class UdpProtocol(asyncio.DatagramProtocol):
+                    def __init__(self, session, udp_session):
+                        self.session = session
+                        self.udp_session = udp_session
+
+                    def datagram_received(self, data, addr):
+                        try:
+                            self.udp_session.packets.put_nowait((data, addr))
+                            self.udp_session.notify.set()
+                        except asyncio.QueueFull:
+                            self.udp_session.queue_drops += 1
+
+                    def error_received(self, exc):
+                        self.udp_session.eof = True
+                        self.udp_session.notify.set()
+
+                transport, protocol = await loop.create_datagram_endpoint(
+                    lambda: UdpProtocol(self, None),
+                    remote_addr=(host, port)
+                )
+
+                udp_session = UdpSession(transport=transport, remote_addr=(host, port))
+                protocol.udp_session = udp_session
+                self.udp_sessions[sid] = udp_session
+
+                # Send data immediately if provided
+                if data_b64:
+                    try:
+                        data = base64.b64decode(data_b64)
+                        transport.sendto(data, (host, port))
+                        udp_session.last_active = time.time()
+                    except Exception as e:
+                        logger.error(f"UDP send failed: {e}")
+                        udp_session.eof = True
+                        udp_session.notify.set()
+
+                return {"sid": sid}
+            else:
+                # Create TCP session
+                sid = f"tcp_{len(self.tcp_sessions)}"
+                reader, writer = await asyncio.open_connection(host, port)
+                tcp_session = TcpSession(stream=reader, writer=writer)
+                self.tcp_sessions[sid] = tcp_session
+
+                # Start reader task
+                asyncio.create_task(self._tcp_reader_task(sid, tcp_session))
+
+                # Send data immediately if provided
+                if data_b64:
+                    try:
+                        data = base64.b64decode(data_b64)
+                        writer.write(data)
+                        await writer.drain()
+                        tcp_session.last_active = time.time()
+
+                        # Drain any available data
+                        if tcp_session.buffer:
+                            drained_data, eof = await self._drain_tcp_now(tcp_session)
+                            if drained_data:
+                                return {"sid": sid, "d": base64.b64encode(drained_data).decode('utf-8'), "eof": eof}
+                    except Exception as e:
+                        logger.error(f"TCP send failed: {e}")
+                        tcp_session.eof = True
+                        tcp_session.notify.set()
+
+                return {"sid": sid}
+        except Exception as e:
+            logger.error(f"Connect_data failed: {e}")
             return {"e": "CONNECT_FAILED"}
 
     async def _handle_data(self, sid: str, op: Dict[str, Any]) -> Dict[str, Any]:

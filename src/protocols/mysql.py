@@ -270,7 +270,7 @@ class MhrvTunnelSession(Session):
         )
 
         # Wait for drain data to be available
-        drain_deadline = 2.0 if has_writes_or_connects else 15.0  # seconds
+        drain_deadline = 10.0 if has_writes_or_connects else 15.0  # seconds
 
         # Collect all session notifies
         notifies = []
@@ -280,20 +280,8 @@ class MhrvTunnelSession(Session):
             notifies.append(session.notify)
 
         if notifies:
-            try:
-                # Wait for any session to have data available
-                tasks = [asyncio.create_task(notify.wait()) for notify in notifies]
-                await asyncio.wait(
-                    tasks,
-                    timeout=drain_deadline,
-                    return_when=asyncio.FIRST_COMPLETED
-                )
-                # Cancel remaining tasks
-                for task in tasks:
-                    if not task.done():
-                        task.cancel()
-            except asyncio.TimeoutError:
-                pass
+            # Simple wait for data to arrive
+            await asyncio.sleep(5.0)
 
         # After processing all operations, drain any available data from all sessions
         # This ensures that responses from remote servers are returned to the client
@@ -385,7 +373,7 @@ class MhrvTunnelSession(Session):
                 # Use hostname directly and let asyncio handle resolution with timeout
                 try:
                     reader, writer = await asyncio.wait_for(
-                        asyncio.open_connection(host, port),
+                        asyncio.open_connection(host, port, family=socket.AF_INET),
                         timeout=10.0  # 10 second timeout like Rust code
                     )
                 except asyncio.TimeoutError:
@@ -484,11 +472,15 @@ class MhrvTunnelSession(Session):
                         await writer.drain()
                         tcp_session.last_active = time.time()
 
-                        # Drain any available data
-                        if tcp_session.buffer:
-                            drained_data, eof = await self._drain_tcp_now(tcp_session)
-                            if drained_data:
-                                return {"sid": sid, "d": base64.b64encode(drained_data).decode('utf-8'), "eof": eof}
+                        # Wait for response data or EOF, up to 0.5s (like Rust)
+                        try:
+                            await asyncio.wait_for(tcp_session.notify.wait(), timeout=0.5)
+                        except asyncio.TimeoutError:
+                            pass
+                        tcp_session.notify.clear()
+                        drained_data, eof = await self._drain_tcp_now(tcp_session)
+                        if drained_data:
+                            return {"sid": sid, "d": base64.b64encode(drained_data).decode('utf-8'), "eof": eof}
                     except Exception as e:
                         logger.error(f"TCP send failed: {e}")
                         tcp_session.eof = True
@@ -613,27 +605,33 @@ class MhrvTunnelSession(Session):
         """Background task to read from TCP connection."""
         try:
             while not session.eof:
-                data = await session.stream.read(8192)
-                if not data:
-                    # EOF
+                try:
+                    data = await session.stream.read(8192)
+                    if not data:
+                        # EOF
+                        session.eof = True
+                        session.notify.set()
+                        break
+
+                    session.buffer.extend(data)
+                    session.notify.set()
+
+                    # Prevent buffer from growing too large
+                    if len(session.buffer) > TCP_DRAIN_MAX_BYTES * 2:
+                        # Drop oldest data
+                        session.buffer = session.buffer[-TCP_DRAIN_MAX_BYTES:]
+                except Exception as e:
+                    logger.error(f"TCP reader error for session {sid}: {e}")
                     session.eof = True
                     session.notify.set()
                     break
-
-                session.buffer.extend(data)
-                session.notify.set()
-
-                # Prevent buffer from growing too large
-                if len(session.buffer) > TCP_DRAIN_MAX_BYTES * 2:
-                    # Drop oldest data
-                    session.buffer = session.buffer[-TCP_DRAIN_MAX_BYTES:]
         except asyncio.CancelledError:
             # Task was cancelled - this is expected during cleanup
             session.eof = True
             session.notify.set()
             raise
         except Exception as e:
-            logger.error(f"TCP reader error for session {sid}: {e}")
+            logger.error(f"TCP reader task error for session {sid}: {e}")
             session.eof = True
             session.notify.set()
 

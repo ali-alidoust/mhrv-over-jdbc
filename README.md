@@ -85,6 +85,9 @@ export GOOGLE_SCRIPT_ID="your-deployment-id"
 ### Step 3: Start the MySQL tunnel server
 
 ```bash
+# Set the tunnel auth key (must match Apps Script TUNNEL_AUTH_KEY)
+export TUNNEL_AUTH_KEY="your-secret-key"
+
 # Start the server
 uv run python main.py
 
@@ -92,7 +95,9 @@ uv run python main.py
 python main.py
 ```
 
-The server will listen on `127.0.0.1:3306` by default.
+The server will listen on `0.0.0.0:3306` by default, accepting connections from the internet.
+
+**Important:** Ensure your firewall allows inbound connections to port 3306, and that your VPS security group permits MySQL traffic from `0.0.0.0/0` (or restrict to Google's IP ranges if possible).
 
 ### Step 4: Configure your applications
 

@@ -64,6 +64,7 @@ class TcpSession:
     notify: asyncio.Event = field(default_factory=asyncio.Event)
     eof: bool = False
     last_active: float = field(default_factory=time.time)
+    reader_task: Optional[asyncio.Task] = None
 
 @dataclass
 class UdpSession:
@@ -227,8 +228,8 @@ class MhrvTunnelSession(Session):
                 tcp_session = TcpSession(stream=reader, writer=writer)
                 self.tcp_sessions[sid] = tcp_session
 
-                # Start reader task
-                asyncio.create_task(self._tcp_reader_task(sid, tcp_session))
+                # Start reader task and store reference
+                tcp_session.reader_task = asyncio.create_task(self._tcp_reader_task(sid, tcp_session))
 
                 return {"sid": sid}
         except Exception as e:
@@ -295,8 +296,8 @@ class MhrvTunnelSession(Session):
                 tcp_session = TcpSession(stream=reader, writer=writer)
                 self.tcp_sessions[sid] = tcp_session
 
-                # Start reader task
-                asyncio.create_task(self._tcp_reader_task(sid, tcp_session))
+                # Start reader task and store reference
+                tcp_session.reader_task = asyncio.create_task(self._tcp_reader_task(sid, tcp_session))
 
                 # Send data immediately if provided
                 if data_b64:
@@ -375,6 +376,13 @@ class MhrvTunnelSession(Session):
                 pass
             session.eof = True
             session.notify.set()
+            # Cancel the reader task if it exists
+            if session.reader_task and not session.reader_task.done():
+                session.reader_task.cancel()
+                try:
+                    await session.reader_task
+                except asyncio.CancelledError:
+                    pass
             del self.tcp_sessions[sid]
         elif sid in self.udp_sessions:
             session = self.udp_sessions[sid]

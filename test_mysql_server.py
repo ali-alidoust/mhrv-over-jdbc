@@ -166,39 +166,43 @@ def test_batch_operation(host="127.0.0.1", port=3306, auth_key=None):
             pass
 
 def main():
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Test MHRV MySQL server connectivity")
+    parser.add_argument("host", nargs="?", default="127.0.0.1",
+                       help="MySQL server host (default: 127.0.0.1)")
+    parser.add_argument("-p", "--port", type=int, default=3306,
+                       help="MySQL server port (default: 3306)")
+    parser.add_argument("-k", "--auth-key",
+                       help="Tunnel auth key (default: from TUNNEL_AUTH_KEY env var)")
+
+    args = parser.parse_args()
+
     print("🔍 MHRV MySQL Server Test")
     print("=" * 40)
+    print(f"Testing server: {args.host}:{args.port}")
 
-    # Get auth key from environment
-    auth_key = os.getenv("TUNNEL_AUTH_KEY")
+    # Get auth key from args or environment
+    auth_key = args.auth_key or os.getenv("TUNNEL_AUTH_KEY")
     if auth_key:
-        print(f"Using auth key from TUNNEL_AUTH_KEY: {auth_key[:10]}...")
+        print(f"Using auth key: {auth_key[:10]}...")
     else:
-        print("⚠️  No TUNNEL_AUTH_KEY environment variable set")
-        print("   Set it with: export TUNNEL_AUTH_KEY='your-key'")
+        print("⚠️  No auth key specified (use -k or set TUNNEL_AUTH_KEY)")
+        print("   Some tests will fail without proper authentication")
 
-    # Test local connection first
-    print("\n1. Testing MySQL connection to localhost...")
-    if not test_mysql_connection("127.0.0.1", 3306):
-        print("❌ Local MySQL connection failed - is the server running?")
+    # Test connection
+    print(f"\n1. Testing MySQL connection to {args.host}:{args.port}...")
+    if not test_mysql_connection(args.host, args.port):
+        print("❌ MySQL connection failed - is the server running and accessible?")
         return
 
     # Test tunnel operation
     print("\n2. Testing tunnel operation...")
-    test_tunnel_operation("127.0.0.1", 3306, auth_key)
+    test_tunnel_operation(args.host, args.port, auth_key)
 
     # Test batch operation
     print("\n3. Testing batch operation...")
-    test_batch_operation("127.0.0.1", 3306, auth_key)
-
-    # Test external connection if IP provided
-    if len(sys.argv) > 1:
-        external_ip = sys.argv[1]
-        print(f"\n4. Testing external connection to {external_ip}...")
-        test_mysql_connection(external_ip, 3306)
-
-        print(f"\n5. Testing external tunnel operation to {external_ip}...")
-        test_tunnel_operation(external_ip, 3306, auth_key)
+    test_batch_operation(args.host, args.port, auth_key)
 
     print("\n" + "=" * 40)
     print("Test complete. Check the results above.")

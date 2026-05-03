@@ -450,7 +450,7 @@ class MhrvTunnelSession(Session):
 class MhrvMysqlServer:
     """MHRV MySQL tunnel server."""
 
-    def __init__(self, host: str = "127.0.0.1", port: int = 3306, auth_key: Optional[str] = None):
+    def __init__(self, host: str = "0.0.0.0", port: int = 3306, auth_key: Optional[str] = None):
         self.host = host
         self.port = port
         self.auth_key = auth_key

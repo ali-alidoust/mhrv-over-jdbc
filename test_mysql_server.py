@@ -19,7 +19,8 @@ def test_mysql_connection(host="127.0.0.1", port=3306):
             user="any_user",
             password="any_password",
             database=None,
-            connection_timeout=10
+            connection_timeout=10,
+            ssl_disabled=True  # Disable SSL for mysql-mimic compatibility
         )
         print(f"✅ MySQL connection to {host}:{port} successful")
         conn.close()
@@ -37,7 +38,8 @@ def test_tunnel_operation(host="127.0.0.1", port=3306, auth_key=None):
             user="any_user",
             password="any_password",
             database=None,
-            connection_timeout=10
+            connection_timeout=10,
+            ssl_disabled=True  # Disable SSL for mysql-mimic compatibility
         )
 
         # Test connect operation
@@ -98,7 +100,8 @@ def test_batch_operation(host="127.0.0.1", port=3306, auth_key=None):
             user="any_user",
             password="any_password",
             database=None,
-            connection_timeout=10
+            connection_timeout=10,
+            ssl_disabled=True  # Disable SSL for mysql-mimic compatibility
         )
 
         # Test batch with connect operations

@@ -1,0 +1,58 @@
+version = 1
+revision = 3
+requires-python = ">=3.11"
+
+[[package]]
+name = "mhrv-over-jdbc"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "mysql-mimic" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "mysql-mimic", specifier = ">=3.0.2" }]
+
+[[package]]
+name = "mysql-mimic"
+version = "3.0.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "sqlglot" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/89/cb/9b911e4fd456b49c4619d47949cd697676f11124362e1debc8783a69e2e8/mysql_mimic-3.0.2.tar.gz", hash = "sha256:764522253dc69e6d55fa5302e35e390b624bc5df15ea3f868b86621effcf55f4", size = 56153, upload-time = "2026-03-26T19:54:48.107Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2d/e8/5eb35a635d4bcf4a65496d224c926b21f19bb34933dbf26cd045df187359/mysql_mimic-3.0.2-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:b72cab00eafe34ef95a272b27b7d77d850c465d7943bdb805c485f124dfe94c2", size = 400373, upload-time = "2026-03-26T19:54:10.353Z" },
+    { url = "https://files.pythonhosted.org/packages/07/d7/2989255736e9f91c1d19583efcdbcd7fd7a13d16af8670974e0c3369cced/mysql_mimic-3.0.2-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:37f34b34252f07316986ddacf4883b1cda79464b57691b956ee049a02e14a50c", size = 384498, upload-time = "2026-03-26T19:54:11.469Z" },
+    { url = "https://files.pythonhosted.org/packages/f4/41/23761fcf6cf89dbf3bb84885dd3e52908deaa4424c99f966601d8717a21e/mysql_mimic-3.0.2-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:28d03a3b5dde21be7b020d0f49fe4e8129f020ff3dcf2859ebd64959fbe2433d", size = 558002, upload-time = "2026-03-26T19:54:12.545Z" },
+    { url = "https://files.pythonhosted.org/packages/4c/f5/d8e18d422bf8417b54a8edf9a4ad79181f3e58eac48986253a251f6186de/mysql_mimic-3.0.2-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:518ce4bf5891872d74956f308535400f75c9ff4cc752eda293ad0b8554eb4862", size = 576606, upload-time = "2026-03-26T19:54:13.824Z" },
+    { url = "https://files.pythonhosted.org/packages/30/ef/c5fbab1439ffe6100ca0d0f9a990b9ab97cb0033b15dc0c89e2bdba2eb1c/mysql_mimic-3.0.2-cp311-cp311-musllinux_1_2_aarch64.whl", hash = "sha256:8314f9fd302118b219632540455a781c6645feec8b67e74ff293fe529ba6402a", size = 569363, upload-time = "2026-03-26T19:54:15.359Z" },
+    { url = "https://files.pythonhosted.org/packages/13/45/f5df11e63559ea64634fdc71395d01bb511f3036423d4dceb8ee47b1ab2a/mysql_mimic-3.0.2-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:a053a74b883bfee95fc8e1ee21f859dd7c91bac46d506bb052461c568e02bfa8", size = 583545, upload-time = "2026-03-26T19:54:16.598Z" },
+    { url = "https://files.pythonhosted.org/packages/d1/fb/1c8043837929292f6aaceaa9f2dccf3823745ad5696fac8af34bd5d1d5e7/mysql_mimic-3.0.2-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:7d3a8358835bbfcf51b3a8a004f47201591b13b31b759dbccb6e66514e51436e", size = 403424, upload-time = "2026-03-26T19:54:17.648Z" },
+    { url = "https://files.pythonhosted.org/packages/85/89/0d709de3b87d61e079788e8073afa3dbc6349195c5dcf842339c99e495c0/mysql_mimic-3.0.2-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:6174e1d050b4d495706bd0984ad7f6a4eee49eecaf4ac78c840a0fe84f929364", size = 385177, upload-time = "2026-03-26T19:54:19.144Z" },
+    { url = "https://files.pythonhosted.org/packages/99/6f/7fba98699fac969722407468ec4bc35a4365194d2988ff3313a649e58182/mysql_mimic-3.0.2-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:41a84e64ac6c004548542abb158e8d536c5c900d5685d8efa38e0548b6c8e2bb", size = 577808, upload-time = "2026-03-26T19:54:20.297Z" },
+    { url = "https://files.pythonhosted.org/packages/04/06/bf35bed91a96ccc84675d32e92b10473d1927563663e2abf5c2e0cde57ec/mysql_mimic-3.0.2-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:7501f9dc244df4249f98e74515176c5b727f8984587289da80ccc3b7888ee645", size = 596939, upload-time = "2026-03-26T19:54:21.969Z" },
+    { url = "https://files.pythonhosted.org/packages/11/f9/e806a3dfde49c19942bd0099026091d59d95fe7b2489fc51f1dfcdeabbd5/mysql_mimic-3.0.2-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:90bd140255d06f45ad7887b563caffb00217049809ea452c42ff24fe9f64f761", size = 586541, upload-time = "2026-03-26T19:54:23.348Z" },
+    { url = "https://files.pythonhosted.org/packages/4f/28/63750afd71121251251a70c1c1139270723f8fb749662d8753b968531013/mysql_mimic-3.0.2-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:1945db8c125f1da17cf2251a4c39fd5029a56d6af9ccb8c11d0a800bdb301564", size = 592592, upload-time = "2026-03-26T19:54:24.589Z" },
+    { url = "https://files.pythonhosted.org/packages/54/34/d761e05fbdc763aaec64a3609eeeaf6bf1b5ba226b471279b9db4e5e771c/mysql_mimic-3.0.2-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:b065bb5a1cb1302892e7ba4fda6a70f8523bcd09ea99070e784d51f1256b5ccf", size = 403959, upload-time = "2026-03-26T19:54:25.89Z" },
+    { url = "https://files.pythonhosted.org/packages/f6/f1/6c288ababa5a45195883707c67f33332b68f0b5af31f91710da8fc99f1fc/mysql_mimic-3.0.2-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:33dbeb7a07bcb4ffbc8f80831eefbc5c6c935728773aa8cb1ed8f6e4956b5830", size = 385943, upload-time = "2026-03-26T19:54:27.265Z" },
+    { url = "https://files.pythonhosted.org/packages/d0/9c/5c5521e137a1626b2193b48386f7c2ed8f3f0bdda3031c544f9842e6975e/mysql_mimic-3.0.2-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:4d5b4770018c43280b691a0b9bc80e184e46d2df45dd61d68b961c5c6417c385", size = 575608, upload-time = "2026-03-26T19:54:28.314Z" },
+    { url = "https://files.pythonhosted.org/packages/a6/a5/724840b441fa2ed8fd80ba97a5666f6b0b4d13158cbd1307f3ecd1e4029c/mysql_mimic-3.0.2-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:654d88fbf4b3701afa15d169e664cd3648f0f7007054b65ee470c9cf6d90eeab", size = 594657, upload-time = "2026-03-26T19:54:29.464Z" },
+    { url = "https://files.pythonhosted.org/packages/03/c4/640aa29cce56e5ad545d2b47340e86c6d29ab70c4701e9a11b75c6ec9098/mysql_mimic-3.0.2-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:e4bfe77fea06b2aea083d2a805dae0e0da91720ab51b38980f77a2327b0e6a16", size = 584583, upload-time = "2026-03-26T19:54:30.574Z" },
+    { url = "https://files.pythonhosted.org/packages/3b/01/2b4f9ea17732194e0bb1ad75c9bb61890c150f3421833b3ee10603d08719/mysql_mimic-3.0.2-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:fbfaf44144cb5158242d444d4fe35f8f092584c0cc5c45f33c9709f14c38d782", size = 590679, upload-time = "2026-03-26T19:54:32.062Z" },
+    { url = "https://files.pythonhosted.org/packages/dd/90/9e6a3af871ddff3cf4f56451934b51ed57196ff8b5a9e71024067671805b/mysql_mimic-3.0.2-cp314-cp314-macosx_10_15_x86_64.whl", hash = "sha256:a7bac61210dad5309d8ebae0ed39d4866a47cd023765d6083e5e063676eb2e07", size = 402645, upload-time = "2026-03-26T19:54:33.23Z" },
+    { url = "https://files.pythonhosted.org/packages/39/2a/b6416bf852aac297b787004a83e298124beb7371e499ee2b1429ba20c500/mysql_mimic-3.0.2-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:4748041377f8a3a1191ea19ca5b5fdaa02e9a5b42a1bbcd5491f64c8f68092a4", size = 385657, upload-time = "2026-03-26T19:54:34.601Z" },
+    { url = "https://files.pythonhosted.org/packages/f0/13/f77d590400aa6b176ea263560543dbf838498809d5cf658968862fe6ae49/mysql_mimic-3.0.2-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:0ea36c685649be21b8427717fb67364bbd05ebf64fb6837fcfb6e1bd05d116ec", size = 577414, upload-time = "2026-03-26T19:54:35.866Z" },
+    { url = "https://files.pythonhosted.org/packages/c3/32/8eb502814d5242c1b920ef48b3bea1bdb5445b674504f1515064fa001436/mysql_mimic-3.0.2-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:f261fc0e06cc76a5b21265f369d0bb2917ddeff8a194ff20cec7d4f8461e6a87", size = 596561, upload-time = "2026-03-26T19:54:37.609Z" },
+    { url = "https://files.pythonhosted.org/packages/df/38/23ffed635e578f853dc0bbba1c00c3753ab82da2757fd601fdbf83590489/mysql_mimic-3.0.2-cp314-cp314-musllinux_1_2_aarch64.whl", hash = "sha256:87d47d79439073ac64911e27703e38dc4b805d16d1838140d2f875bf2277c74a", size = 586477, upload-time = "2026-03-26T19:54:39.157Z" },
+    { url = "https://files.pythonhosted.org/packages/d5/00/5ca295766c47062d12c9f983c4f673bf2836c7d10fa85b52cc131d963ebf/mysql_mimic-3.0.2-cp314-cp314-musllinux_1_2_x86_64.whl", hash = "sha256:2af6d635bd89185252599d400f22c7e5a05f52195f61674b5c76b1687fb319a6", size = 601112, upload-time = "2026-03-26T19:54:40.24Z" },
+]
+
+[[package]]
+name = "sqlglot"
+version = "30.6.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/3c/66/6ece15f197874e56c76e1d0269cebf284ba992a80dfadca9d1972fdf7edf/sqlglot-30.6.0.tar.gz", hash = "sha256:246d34d39927422a50a3fa155f37b2f6346fba85f1a755b13c941eb32ef93361", size = 5835307, upload-time = "2026-04-20T20:11:08.164Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/dc/e7/64fe971cbca33a0446b06f4a5ff8e3fa4a1dbd0a039ceabcc3e6cf4087a9/sqlglot-30.6.0-py3-none-any.whl", hash = "sha256:e005fc2f47994f90d7d8df341f1cbe937518497b0b7b1507d4c03c4c9dfd2778", size = 673920, upload-time = "2026-04-20T20:11:05.758Z" },
+]

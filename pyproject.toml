@@ -1,0 +1,9 @@
+[project]
+name = "mhrv-over-jdbc"
+version = "0.1.0"
+description = "Performs requests for mhrv-rs over JDBC"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "mysql-mimic>=3.0.2",
+]

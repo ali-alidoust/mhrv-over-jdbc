@@ -454,10 +454,10 @@ class AcceptAnyAuthPlugin(AuthPlugin):
     name = "mysql_accept_any"
     client_plugin_name = "mysql_native_password"
 
-    async def start(self, auth_info=None):
-        """Always accept authentication."""
+    async def auth(self, auth_info=None):
+        """Always accept authentication - generator that yields Success."""
         # Accept any username/password combination
-        return Success(authenticated_as="any_user"), None
+        yield Success(authenticated_as="any_user")
 
 class AcceptAnyIdentityProvider(IdentityProvider):
     """Identity provider that accepts any username and uses AcceptAnyAuthPlugin."""
@@ -498,9 +498,8 @@ class MhrvMysqlServer:
     async def start(self):
         """Start the MySQL server."""
         session_factory = self.create_session_factory()
-        # Use SimpleIdentityProvider which accepts any username
-        from mysql_mimic.auth import SimpleIdentityProvider
-        identity_provider = SimpleIdentityProvider()
+        # Use custom identity provider that accepts any credentials
+        identity_provider = AcceptAnyIdentityProvider()
         self.server = MysqlServer(
             session_factory=session_factory,
             identity_provider=identity_provider

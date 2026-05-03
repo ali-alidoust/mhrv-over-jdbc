@@ -300,18 +300,17 @@ class MhrvTunnelSession(Session):
 
                 return {"sid": sid}
             else:
-                # Create TCP session - resolve IPv4 first for faster connection
+                # Create TCP session - let asyncio handle address resolution for reliability
                 sid = f"tcp_{len(self.tcp_sessions)}"
-                resolved_host, resolved_port = await self._resolve_host_ipv4_first(host, port)
 
-                # Use resolved address for connection with timeout
+                # Use hostname directly and let asyncio handle resolution with timeout
                 try:
                     reader, writer = await asyncio.wait_for(
-                        asyncio.open_connection(resolved_host, resolved_port),
+                        asyncio.open_connection(host, port),
                         timeout=10.0  # 10 second timeout like Rust code
                     )
                 except asyncio.TimeoutError:
-                    logger.error(f"Connection timeout to {resolved_host}:{resolved_port}")
+                    logger.error(f"Connection timeout to {host}:{port}")
                     return {"e": "CONNECT_TIMEOUT"}
 
                 tcp_session = TcpSession(stream=reader, writer=writer)
@@ -379,18 +378,17 @@ class MhrvTunnelSession(Session):
 
                 return {"sid": sid}
             else:
-                # Create TCP session - resolve IPv4 first for faster connection
+                # Create TCP session - let asyncio handle address resolution for reliability
                 sid = f"tcp_{len(self.tcp_sessions)}"
-                resolved_host, resolved_port = await self._resolve_host_ipv4_first(host, port)
 
-                # Use resolved address for connection with timeout
+                # Use hostname directly and let asyncio handle resolution with timeout
                 try:
                     reader, writer = await asyncio.wait_for(
-                        asyncio.open_connection(resolved_host, resolved_port),
+                        asyncio.open_connection(host, port),
                         timeout=10.0  # 10 second timeout like Rust code
                     )
                 except asyncio.TimeoutError:
-                    logger.error(f"Connection timeout to {resolved_host}:{resolved_port}")
+                    logger.error(f"Connection timeout to {host}:{port}")
                     return {"e": "CONNECT_TIMEOUT"}
 
                 tcp_session = TcpSession(stream=reader, writer=writer)

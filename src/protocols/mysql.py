@@ -341,13 +341,14 @@ class MhrvTunnelSession(Session):
                     await session.writer.drain()
                     session.last_active = time.time()
 
-                    # Drain any available data
-                    if session.buffer:
-                        drained_data, eof = await self._drain_tcp_now(session)
-                        if drained_data:
-                            return {"d": base64.b64encode(drained_data).decode('utf-8'), "eof": eof}
+                    # For SSL/TLS handshakes, don't drain immediately - let client poll separately
+                    # This prevents timing issues with SSL handshake
+                    # Drain any available data only if buffer is not empty (from previous reads)
+                    drained_data, eof = await self._drain_tcp_now(session)
+                    if drained_data:
+                        return {"d": base64.b64encode(drained_data).decode('utf-8'), "eof": eof}
                 except Exception as e:
-                    logger.error(f"Write failed: {e}")
+                    logger.error(f"Write failed for session {sid}: {e}")
                     session.eof = True
                     session.notify.set()
         elif sid in self.udp_sessions:
@@ -444,8 +445,13 @@ class MhrvTunnelSession(Session):
                 if len(session.buffer) > TCP_DRAIN_MAX_BYTES * 2:
                     # Drop oldest data
                     session.buffer = session.buffer[-TCP_DRAIN_MAX_BYTES:]
+        except asyncio.CancelledError:
+            # Task was cancelled - this is expected during cleanup
+            session.eof = True
+            session.notify.set()
+            raise
         except Exception as e:
-            logger.error(f"TCP reader error: {e}")
+            logger.error(f"TCP reader error for session {sid}: {e}")
             session.eof = True
             session.notify.set()
 

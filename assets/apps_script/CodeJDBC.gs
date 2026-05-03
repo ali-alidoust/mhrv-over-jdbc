@@ -691,3 +691,112 @@ function _dnsRewriteTxid(bytes, txid) {
   out[1] = lo > 127 ? lo - 256 : lo;
   return out;
 }
+
+// ========================== Debug/Test Functions ==========================
+
+// Test function to debug doPost - call this from Apps Script editor
+function testDoPost() {
+  Logger.log("=== Testing doPost function ===");
+
+  // Test 1: Simple test payload
+  Logger.log("Test 1: Simple payload");
+  try {
+    var result1 = doPost({ postData: { contents: '{"test": "hello"}' } });
+    Logger.log("Result 1: " + result1.getContent());
+  } catch (e) {
+    Logger.log("Error 1: " + e);
+  }
+
+  // Test 2: Tunnel request (this should trigger JDBC)
+  Logger.log("Test 2: Tunnel request");
+  try {
+    var tunnelPayload = {
+      k: AUTH_KEY,
+      t: "connect",
+      h: "google.com",
+      p: 80
+    };
+    var result2 = doPost({ postData: { contents: JSON.stringify(tunnelPayload) } });
+    Logger.log("Result 2: " + result2.getContent());
+  } catch (e) {
+    Logger.log("Error 2: " + e);
+  }
+
+  // Test 3: Invalid JSON
+  Logger.log("Test 3: Invalid JSON");
+  try {
+    var result3 = doPost({ postData: { contents: 'invalid json' } });
+    Logger.log("Result 3: " + result3.getContent());
+  } catch (e) {
+    Logger.log("Error 3: " + e);
+  }
+
+  // Test 4: Wrong auth key
+  Logger.log("Test 4: Wrong auth key");
+  try {
+    var wrongKeyPayload = {
+      k: "wrong-key",
+      t: "connect",
+      h: "google.com",
+      p: 80
+    };
+    var result4 = doPost({ postData: { contents: JSON.stringify(wrongKeyPayload) } });
+    Logger.log("Result 4: " + result4.getContent());
+  } catch (e) {
+    Logger.log("Error 4: " + e);
+  }
+
+  Logger.log("=== Test complete ===");
+  return "Check logs for results";
+}
+
+// Test JDBC connection directly
+function testJDBCConnection() {
+  Logger.log("=== Testing JDBC Connection ===");
+
+  try {
+    Logger.log("Attempting JDBC connection to: " + TUNNEL_JDBC_URL);
+    var conn = Jdbc.getConnection(TUNNEL_JDBC_URL, TUNNEL_JDBC_USER, TUNNEL_JDBC_PASSWORD);
+    Logger.log("JDBC connection successful!");
+
+    // Test a simple query
+    var stmt = conn.createStatement();
+    var rs = stmt.executeQuery("SELECT 'test' as result");
+    if (rs.next()) {
+      Logger.log("Query result: " + rs.getString(1));
+    }
+    rs.close();
+    stmt.close();
+    conn.close();
+    Logger.log("JDBC test completed successfully");
+
+  } catch (e) {
+    Logger.log("JDBC Error: " + e);
+    Logger.log("Error details: " + e.stack);
+  }
+
+  return "Check logs for JDBC test results";
+}
+
+// Test tunnel query execution
+function testTunnelQuery() {
+  Logger.log("=== Testing Tunnel Query ===");
+
+  try {
+    var payload = {
+      k: TUNNEL_AUTH_KEY,
+      op: "connect",
+      host: "google.com",
+      port: 80
+    };
+
+    var result = _executeTunnelQuery(payload);
+    Logger.log("Tunnel query result: " + JSON.stringify(result));
+
+  } catch (e) {
+    Logger.log("Tunnel query error: " + e);
+    Logger.log("Error details: " + e.stack);
+  }
+
+  return "Check logs for tunnel query results";
+}

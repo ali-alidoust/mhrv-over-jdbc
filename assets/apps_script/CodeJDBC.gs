@@ -20,7 +20,7 @@
  */
 
 const AUTH_KEY = "CHANGE_ME_TO_A_STRONG_SECRET";
-const TUNNEL_JDBC_URL = "jdbc:mysql://YOUR_MYSQL_SERVER:3306/YOUR_DATABASE";
+const TUNNEL_JDBC_URL = "jdbc:mysql://YOUR_MYSQL_SERVER:3306";
 const TUNNEL_JDBC_USER = "any_user";        // mysql-mimic accepts any username
 const TUNNEL_JDBC_PASSWORD = "any_password"; // mysql-mimic accepts any password
 const TUNNEL_AUTH_KEY = "YOUR_TUNNEL_AUTH_KEY"; // Real authentication happens here

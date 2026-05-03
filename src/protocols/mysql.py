@@ -39,7 +39,7 @@ from dataclasses import dataclass, field
 
 from mysql_mimic import MysqlServer, Session, ResultSet, ResultColumn, ColumnType
 import mysql_mimic
-from mysql_mimic.auth import AuthPlugin, Success, IdentityProvider, User
+from mysql_mimic.auth import AuthPlugin, Success, IdentityProvider, User, FILLER
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -456,7 +456,10 @@ class AcceptAnyAuthPlugin(AuthPlugin):
 
     async def auth(self, auth_info=None):
         """Always accept authentication - generator that yields Success."""
-        # Accept any username/password combination
+        # First yield FILLER (bytes) like NoLoginAuthPlugin does
+        if not auth_info:
+            _ = yield FILLER
+        # Then yield Success to accept any username/password combination
         yield Success(authenticated_as="any_user")
 
 class AcceptAnyIdentityProvider(IdentityProvider):

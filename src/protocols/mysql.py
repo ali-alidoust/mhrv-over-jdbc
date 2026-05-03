@@ -282,11 +282,16 @@ class MhrvTunnelSession(Session):
         if notifies:
             try:
                 # Wait for any session to have data available
+                tasks = [asyncio.create_task(notify.wait()) for notify in notifies]
                 await asyncio.wait(
-                    [notify.wait() for notify in notifies],
+                    tasks,
                     timeout=drain_deadline,
                     return_when=asyncio.FIRST_COMPLETED
                 )
+                # Cancel remaining tasks
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
             except asyncio.TimeoutError:
                 pass
 

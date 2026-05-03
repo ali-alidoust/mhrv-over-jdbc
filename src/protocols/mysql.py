@@ -32,6 +32,7 @@ import asyncio
 import base64
 import json
 import logging
+import socket
 from collections import defaultdict
 from typing import Dict, List, Optional, Tuple, Any
 import time
@@ -182,6 +183,36 @@ class MhrvTunnelSession(Session):
 
         return {"r": results}
 
+    async def _resolve_host_ipv4_first(self, host: str, port: int) -> Tuple[str, int]:
+        """Resolve hostname and return IPv4 address first, falling back to IPv6."""
+        try:
+            # Get all addresses for the host
+            loop = asyncio.get_event_loop()
+            addrinfo = await loop.getaddrinfo(host, port, family=0, type=socket.SOCK_STREAM)
+
+            # Sort to prefer IPv4 addresses
+            ipv4_addrs = []
+            ipv6_addrs = []
+
+            for family, type_, proto, canonname, sockaddr in addrinfo:
+                if family == socket.AF_INET:  # IPv4
+                    ipv4_addrs.append(sockaddr)
+                elif family == socket.AF_INET6:  # IPv6
+                    ipv6_addrs.append(sockaddr)
+
+            # Return first IPv4 address, or first IPv6 if no IPv4
+            if ipv4_addrs:
+                return ipv4_addrs[0]
+            elif ipv6_addrs:
+                return ipv6_addrs[0]
+            else:
+                raise ValueError(f"No valid addresses found for {host}:{port}")
+
+        except Exception as e:
+            logger.warning(f"DNS resolution failed for {host}:{port}, falling back to direct: {e}")
+            # Fall back to letting asyncio handle it
+            return host, port
+
     async def _handle_connect(self, op: Dict[str, Any]) -> Dict[str, Any]:
         """Handle connect operation."""
         host = op.get("host")
@@ -224,9 +255,12 @@ class MhrvTunnelSession(Session):
 
                 return {"sid": sid}
             else:
-                # Create TCP session
+                # Create TCP session - resolve IPv4 first for faster connection
                 sid = f"tcp_{len(self.tcp_sessions)}"
-                reader, writer = await asyncio.open_connection(host, port)
+                resolved_host, resolved_port = await self._resolve_host_ipv4_first(host, port)
+
+                # Use resolved address for connection
+                reader, writer = await asyncio.open_connection(resolved_host, resolved_port)
                 tcp_session = TcpSession(stream=reader, writer=writer)
                 self.tcp_sessions[sid] = tcp_session
 
@@ -235,7 +269,7 @@ class MhrvTunnelSession(Session):
 
                 return {"sid": sid}
         except Exception as e:
-            logger.error(f"Connect failed: {e}")
+            logger.error(f"Connect failed to {host}:{port}: {e}")
             return {"e": "CONNECT_FAILED"}
 
     async def _handle_connect_data(self, op: Dict[str, Any]) -> Dict[str, Any]:
@@ -292,9 +326,12 @@ class MhrvTunnelSession(Session):
 
                 return {"sid": sid}
             else:
-                # Create TCP session
+                # Create TCP session - resolve IPv4 first for faster connection
                 sid = f"tcp_{len(self.tcp_sessions)}"
-                reader, writer = await asyncio.open_connection(host, port)
+                resolved_host, resolved_port = await self._resolve_host_ipv4_first(host, port)
+
+                # Use resolved address for connection
+                reader, writer = await asyncio.open_connection(resolved_host, resolved_port)
                 tcp_session = TcpSession(stream=reader, writer=writer)
                 self.tcp_sessions[sid] = tcp_session
 

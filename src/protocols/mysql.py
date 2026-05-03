@@ -36,6 +36,7 @@ import socket
 from collections import defaultdict
 from typing import Dict, List, Optional, Tuple, Any
 import time
+import uuid
 from dataclasses import dataclass, field
 
 from mysql_mimic import MysqlServer, Session, ResultSet, ResultColumn, ColumnType
@@ -193,7 +194,7 @@ class MhrvTunnelSession(Session):
             return {"e": "unknown op: {}".format(op_type), "code": CODE_UNSUPPORTED_OP}
 
     async def _drain_session_if_available(self, sid: str) -> Dict[str, Any]:
-        """Drain any available data from a session without blocking."""
+        """Drain any available data from a session without blocking. Remove session on EOF."""
         if sid in self.tcp_sessions:
             session = self.tcp_sessions[sid]
             drained_data, eof = await self._drain_tcp_now(session)
@@ -202,9 +203,34 @@ class MhrvTunnelSession(Session):
                 result["d"] = base64.b64encode(drained_data).decode('utf-8')
             if eof:
                 result["eof"] = True
+                # Remove session on EOF and empty buffer
+                if sid in self.tcp_sessions:
+                    try:
+                        session.writer.close()
+                        await session.writer.wait_closed()
+                    except Exception:
+                        pass
+                    # Cancel the reader task if it exists
+                    if session.reader_task and not session.reader_task.done():
+                        session.reader_task.cancel()
+                        try:
+                            await session.reader_task
+                        except asyncio.CancelledError:
+                            pass
+                    del self.tcp_sessions[sid]
             return result
         elif sid in self.udp_sessions:
-            return await self._handle_udp_data(sid)
+            udp_result = await self._handle_udp_data(sid)
+            # Remove UDP session if EOF and queue is empty
+            if udp_result.get("eof") and sid in self.udp_sessions:
+                session = self.udp_sessions[sid]
+                if session.packets.empty():
+                    try:
+                        session.transport.close()
+                    except Exception:
+                        pass
+                    del self.udp_sessions[sid]
+            return udp_result
         return {}
 
     async def _handle_udp_open(self, op: Dict[str, Any]) -> Dict[str, Any]:
@@ -217,7 +243,7 @@ class MhrvTunnelSession(Session):
 
         try:
             # Create UDP session
-            sid = f"udp_{len(self.udp_sessions)}"
+            sid = str(uuid.uuid4())
             loop = asyncio.get_event_loop()
 
             class UdpProtocol(asyncio.DatagramProtocol):
@@ -269,28 +295,49 @@ class MhrvTunnelSession(Session):
             for op in ops
         )
 
-        # Wait for drain data to be available
-        drain_deadline = 10.0 if has_writes_or_connects else 15.0  # seconds
+        # Adaptive draining and long-polling (Rust parity)
+        # 1. Wait for any session to become readable or EOF
+        # 2. Adaptive settle for stragglers
+        # 3. Drain all sessions
 
-        # Collect all session notifies
-        notifies = []
-        for session in self.tcp_sessions.values():
-            notifies.append(session.notify)
-        for session in self.udp_sessions.values():
-            notifies.append(session.notify)
+        # Gather all session notifies
+        tcp_sessions = list(self.tcp_sessions.values())
+        udp_sessions = list(self.udp_sessions.values())
+        notifies = [s.notify for s in tcp_sessions] + [s.notify for s in udp_sessions]
 
         if notifies:
-            # Simple wait for data to arrive
-            await asyncio.sleep(5.0)
+            # Phase 1: Wait for any session to become readable or EOF
+            deadline = ACTIVE_DRAIN_DEADLINE if has_writes_or_connects else LONGPOLL_DEADLINE
+            try:
+                await asyncio.wait(
+                    [n.wait() for n in notifies],
+                    timeout=deadline,
+                    return_when=asyncio.FIRST_COMPLETED
+                )
+            except Exception:
+                pass
+            for n in notifies:
+                n.clear()
+
+            # Phase 2: Adaptive settle for stragglers (up to STRAGGLER_SETTLE_MAX)
+            settle_end = time.time() + STRAGGLER_SETTLE_MAX
+            prev_tcp_bytes = sum(len(s.buffer) for s in tcp_sessions)
+            prev_udp_pkts = sum(s.packets.qsize() for s in udp_sessions)
+            while time.time() < settle_end:
+                await asyncio.sleep(STRAGGLER_SETTLE_STEP)
+                tcp_bytes = sum(len(s.buffer) for s in tcp_sessions)
+                udp_pkts = sum(s.packets.qsize() for s in udp_sessions)
+                if tcp_bytes == prev_tcp_bytes and udp_pkts == prev_udp_pkts:
+                    break
+                prev_tcp_bytes = tcp_bytes
+                prev_udp_pkts = udp_pkts
 
         # After processing all operations, drain any available data from all sessions
-        # This ensures that responses from remote servers are returned to the client
         for i, op in enumerate(ops):
             sid = op.get("sid")
             if sid and results[i].get("e") is None:  # Only drain if operation was successful
                 drain_result = await self._drain_session_if_available(sid)
                 if drain_result:
-                    # Merge drain results with the operation result
                     results[i].update(drain_result)
 
         return {"r": results}
@@ -337,7 +384,7 @@ class MhrvTunnelSession(Session):
         try:
             if udp:
                 # Create UDP session
-                sid = f"udp_{len(self.udp_sessions)}"
+                sid = str(uuid.uuid4())
                 loop = asyncio.get_event_loop()
 
                 class UdpProtocol(asyncio.DatagramProtocol):
@@ -368,7 +415,7 @@ class MhrvTunnelSession(Session):
                 return {"sid": sid}
             else:
                 # Create TCP session - let asyncio handle address resolution for reliability
-                sid = f"tcp_{len(self.tcp_sessions)}"
+                sid = str(uuid.uuid4())
 
                 # Use hostname directly and let asyncio handle resolution with timeout
                 try:
@@ -446,7 +493,7 @@ class MhrvTunnelSession(Session):
                 return {"sid": sid}
             else:
                 # Create TCP session - let asyncio handle address resolution for reliability
-                sid = f"tcp_{len(self.tcp_sessions)}"
+                sid = str(uuid.uuid4())
 
                 # Use hostname directly and let asyncio handle resolution with timeout
                 try:
@@ -636,10 +683,11 @@ class MhrvTunnelSession(Session):
             session.notify.set()
 
     async def _drain_tcp_now(self, session: TcpSession) -> Tuple[bytes, bool]:
-        """Drain available TCP data."""
+        """Drain available TCP data. Only set eof if buffer is empty and upstream is closed."""
         data = bytes(session.buffer)
         session.buffer.clear()
-        eof = session.eof
+        # Only set eof if buffer is empty and upstream is closed
+        eof = session.eof and not data
         return data, eof
 
     def _start_cleanup_task(self):

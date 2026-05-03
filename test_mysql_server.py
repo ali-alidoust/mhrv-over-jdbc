@@ -57,7 +57,7 @@ def test_tunnel_operation(host="127.0.0.1", port=3306, auth_key=None):
         cursor.execute(query)
         result = cursor.fetchone()
 
-        if result:
+        if result and isinstance(result, (tuple, list)) and isinstance(result[0], str):
             result_b64 = result[0]
             print(f"Raw result: {result_b64}")
 
@@ -68,6 +68,75 @@ def test_tunnel_operation(host="127.0.0.1", port=3306, auth_key=None):
 
                 if "sid" in response:
                     print("✅ Tunnel operation successful - got session ID")
+                    sid = response["sid"]
+                    # Fetch HTTP page using the tunnel
+                    http_get = "GET / HTTP/1.1\r\nHost: google.com\r\nConnection: close\r\n\r\n"
+                    data_payload = {
+                        "op": "data",
+                        "sid": sid,
+                        "d": base64.b64encode(http_get.encode("utf-8")).decode("utf-8")
+                    }
+                    if auth_key:
+                        data_payload["k"] = auth_key
+                    data_json = json.dumps(data_payload)
+                    data_b64 = base64.b64encode(data_json.encode("utf-8")).decode("utf-8")
+                    data_query = f"SELECT MHRV_TUNNEL('{data_b64}')"
+                    print(f"Executing HTTP GET via tunnel: {data_query[:100]}...")
+                    cursor.execute(data_query)
+                    data_result = cursor.fetchone()
+                    if data_result and isinstance(data_result, (tuple, list)) and isinstance(data_result[0], str):
+                        data_result_b64 = data_result[0]
+                        try:
+                            data_result_json = base64.b64decode(data_result_b64).decode("utf-8")
+                            data_response = json.loads(data_result_json)
+                            print(f"HTTP tunnel response: {data_response}")
+                            if "d" in data_response:
+                                http_response = base64.b64decode(data_response["d"]).decode("utf-8", errors="replace")
+                                print("----- HTTP RESPONSE BEGIN -----")
+                                print(http_response)
+                                print("----- HTTP RESPONSE END -----")
+                            else:
+                                print("No HTTP data received in tunnel response.")
+                                # Poll for response up to 5 times
+                                import time
+                                timeout = 0.7  # total adaptive drain window (seconds)
+                                interval = 0.05  # check interval (seconds)
+                                start = time.monotonic()
+                                received = False
+                                while time.monotonic() - start < timeout:
+                                    poll_payload = {
+                                        "op": "data",
+                                        "sid": sid
+                                    }
+                                    if auth_key:
+                                        poll_payload["k"] = auth_key
+                                    poll_json = json.dumps(poll_payload)
+                                    poll_b64 = base64.b64encode(poll_json.encode("utf-8")).decode("utf-8")
+                                    poll_query = f"SELECT MHRV_TUNNEL('{poll_b64}')"
+                                    cursor.execute(poll_query)
+                                    poll_result = cursor.fetchone()
+                                    if poll_result and isinstance(poll_result, (tuple, list)) and isinstance(poll_result[0], str):
+                                        poll_result_b64 = poll_result[0]
+                                        try:
+                                            poll_result_json = base64.b64decode(poll_result_b64).decode("utf-8")
+                                            poll_response = json.loads(poll_result_json)
+                                            if "d" in poll_response:
+                                                print(f"HTTP poll response: {poll_response}")
+                                                http_response = base64.b64decode(poll_response["d"]).decode("utf-8", errors="replace")
+                                                print("----- HTTP RESPONSE BEGIN -----")
+                                                print(http_response)
+                                                print("----- HTTP RESPONSE END -----")
+                                                received = True
+                                                break
+                                        except Exception as e:
+                                            print(f"Failed to decode HTTP poll response: {e}")
+                                    time.sleep(interval)
+                                if not received:
+                                    print("No HTTP data received in adaptive drain window.")
+                        except Exception as e:
+                            print(f"Failed to decode HTTP tunnel response: {e}")
+                    else:
+                        print("No result from HTTP tunnel data query.")
                     return True
                 elif "e" in response:
                     print(f"❌ Tunnel operation failed: {response['e']}")
@@ -124,7 +193,7 @@ def test_batch_operation(host="127.0.0.1", port=3306, auth_key=None):
         cursor.execute(query)
         result = cursor.fetchone()
 
-        if result:
+        if result and isinstance(result, (tuple, list)) and isinstance(result[0], str):
             result_b64 = result[0]
             print(f"Raw batch result: {result_b64[:100]}...")
 

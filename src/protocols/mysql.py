@@ -342,7 +342,8 @@ class MhrvTunnelSession(Session):
                 if drain_result:
                     results[i].update(drain_result)
 
-        return {"r": results}
+        # Ensure results are returned in the same order as input ops
+        return {"r": [results[i] for i in range(len(results))]}
 
     async def _resolve_host_ipv4_first(self, host: str, port: int) -> Tuple[str, int]:
         """Resolve hostname and return IPv4 address first, falling back to IPv6."""
@@ -541,10 +542,28 @@ class MhrvTunnelSession(Session):
             return {"e": "CONNECT_FAILED"}
 
     async def _handle_data(self, sid: str, op: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle data operation."""
+        """Handle data operation.
+
+        If 'd' is present, send data and drain. If not, just drain (poll for data).
+        """
         data_b64 = op.get("d")
-        if not data_b64:
-            return {"e": "MISSING_DATA"}
+        if data_b64 is None:
+            # Poll for any available data (do not send)
+            if sid in self.tcp_sessions:
+                session = self.tcp_sessions[sid]
+                drained_data, eof = await self._drain_tcp_now(session)
+                logger.info(f"_handle_data (poll): sid={sid}, drained={len(drained_data)}, eof={eof}")
+                result = {}
+                if drained_data:
+                    result["d"] = base64.b64encode(drained_data).decode('utf-8')
+                if eof:
+                    result["eof"] = True
+                return result
+            elif sid in self.udp_sessions:
+                return await self._handle_udp_data(sid)
+            else:
+                logger.info(f"_handle_data (poll): sid={sid} not found")
+                return {"e": "SESSION_NOT_FOUND"}
 
         try:
             data = base64.b64decode(data_b64)
@@ -662,6 +681,7 @@ class MhrvTunnelSession(Session):
                         session.notify.set()
                         break
 
+                    logger.info(f"TCP reader for session {sid}: received {len(data)} bytes")
                     session.buffer.extend(data)
                     session.notify.set()
 
@@ -688,6 +708,7 @@ class MhrvTunnelSession(Session):
         """Drain available TCP data. Only set eof if buffer is empty and upstream is closed."""
         data = bytes(session.buffer)
         session.buffer.clear()
+        logger.info(f"Draining TCP session: {len(data)} bytes returned, eof={session.eof}")
         # Only set eof if buffer is empty and upstream is closed
         eof = session.eof and not data
         return data, eof

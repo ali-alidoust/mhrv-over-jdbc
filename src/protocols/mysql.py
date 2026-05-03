@@ -671,12 +671,14 @@ class MhrvTunnelSession(Session):
 
     async def _tcp_reader_task(self, sid: str, session: TcpSession):
         """Background task to read from TCP connection."""
+        logger.info(f"TCP session {sid} opened")
         try:
             while not session.eof:
                 try:
                     data = await session.stream.read(8192)
                     if not data:
                         # EOF
+                        logger.info(f"TCP session {sid} EOF from remote")
                         session.eof = True
                         session.notify.set()
                         break
@@ -696,6 +698,7 @@ class MhrvTunnelSession(Session):
                     break
         except asyncio.CancelledError:
             # Task was cancelled - this is expected during cleanup
+            logger.info(f"TCP session {sid} cancelled")
             session.eof = True
             session.notify.set()
             raise
@@ -703,12 +706,16 @@ class MhrvTunnelSession(Session):
             logger.error(f"TCP reader task error for session {sid}: {e}")
             session.eof = True
             session.notify.set()
+        finally:
+            logger.info(f"TCP session {sid} closed")
 
     async def _drain_tcp_now(self, session: TcpSession) -> Tuple[bytes, bool]:
         """Drain available TCP data. Only set eof if buffer is empty and upstream is closed."""
         data = bytes(session.buffer)
         session.buffer.clear()
         logger.info(f"Draining TCP session: {len(data)} bytes returned, eof={session.eof}")
+        if data:
+            logger.info(f"Drained data (first 64 bytes): {data[:64].hex()}")
         # Only set eof if buffer is empty and upstream is closed
         eof = session.eof and not data
         return data, eof

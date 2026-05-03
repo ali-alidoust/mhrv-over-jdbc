@@ -163,10 +163,55 @@ class MhrvTunnelSession(Session):
             return await self._handle_data(sid, op)
         elif op_type == "close":
             return await self._handle_close(sid)
+        elif op_type == "udp_open":
+            return await self._handle_udp_open(op)
         elif op_type == "udp_data":
             return await self._handle_udp_data(sid)
         else:
-            return {"e": CODE_UNSUPPORTED_OP}
+            return {"e": "unknown op: {}".format(op_type), "code": CODE_UNSUPPORTED_OP}
+
+    async def _handle_udp_open(self, op: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle udp_open operation - create UDP session."""
+        host = op.get("host")
+        port = op.get("port")
+
+        if not host or not port:
+            return {"e": "MISSING_HOST_PORT"}
+
+        try:
+            # Create UDP session
+            sid = f"udp_{len(self.udp_sessions)}"
+            loop = asyncio.get_event_loop()
+
+            class UdpProtocol(asyncio.DatagramProtocol):
+                def __init__(self, session, udp_session):
+                    self.session = session
+                    self.udp_session = udp_session
+
+                def datagram_received(self, data, addr):
+                    try:
+                        self.udp_session.packets.put_nowait((data, addr))
+                        self.udp_session.notify.set()
+                    except asyncio.QueueFull:
+                        self.udp_session.queue_drops += 1
+
+                def error_received(self, exc):
+                    self.udp_session.eof = True
+                    self.udp_session.notify.set()
+
+            transport, protocol = await loop.create_datagram_endpoint(
+                lambda: UdpProtocol(self, None),
+                remote_addr=(host, port)
+            )
+
+            udp_session = UdpSession(transport=transport, remote_addr=(host, port))
+            protocol.udp_session = udp_session
+            self.udp_sessions[sid] = udp_session
+
+            return {"sid": sid}
+        except Exception as e:
+            logger.error(f"UDP open failed to {host}:{port}: {e}")
+            return {"e": "UDP_OPEN_FAILED"}
 
     async def _process_batch(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """Process batch operations."""
@@ -259,8 +304,16 @@ class MhrvTunnelSession(Session):
                 sid = f"tcp_{len(self.tcp_sessions)}"
                 resolved_host, resolved_port = await self._resolve_host_ipv4_first(host, port)
 
-                # Use resolved address for connection
-                reader, writer = await asyncio.open_connection(resolved_host, resolved_port)
+                # Use resolved address for connection with timeout
+                try:
+                    reader, writer = await asyncio.wait_for(
+                        asyncio.open_connection(resolved_host, resolved_port),
+                        timeout=10.0  # 10 second timeout like Rust code
+                    )
+                except asyncio.TimeoutError:
+                    logger.error(f"Connection timeout to {resolved_host}:{resolved_port}")
+                    return {"e": "CONNECT_TIMEOUT"}
+
                 tcp_session = TcpSession(stream=reader, writer=writer)
                 self.tcp_sessions[sid] = tcp_session
 
@@ -330,8 +383,16 @@ class MhrvTunnelSession(Session):
                 sid = f"tcp_{len(self.tcp_sessions)}"
                 resolved_host, resolved_port = await self._resolve_host_ipv4_first(host, port)
 
-                # Use resolved address for connection
-                reader, writer = await asyncio.open_connection(resolved_host, resolved_port)
+                # Use resolved address for connection with timeout
+                try:
+                    reader, writer = await asyncio.wait_for(
+                        asyncio.open_connection(resolved_host, resolved_port),
+                        timeout=10.0  # 10 second timeout like Rust code
+                    )
+                except asyncio.TimeoutError:
+                    logger.error(f"Connection timeout to {resolved_host}:{resolved_port}")
+                    return {"e": "CONNECT_TIMEOUT"}
+
                 tcp_session = TcpSession(stream=reader, writer=writer)
                 self.tcp_sessions[sid] = tcp_session
 

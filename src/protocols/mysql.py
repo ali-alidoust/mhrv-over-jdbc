@@ -479,7 +479,7 @@ class AcceptAnyIdentityProvider(IdentityProvider):
     async def get_user(self, username: str):
         """Return a dummy user for any username."""
         # Create a dummy user - mysql-mimic will use our auth plugin
-        return User(username=username, auth_plugin="mysql_accept_any")
+        return User(name=username, auth_plugin="mysql_accept_any")
 
 class MhrvMysqlServer:
     """MHRV MySQL tunnel server."""

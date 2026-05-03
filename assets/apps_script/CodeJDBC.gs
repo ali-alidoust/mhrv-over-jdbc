@@ -807,14 +807,14 @@ function _handleHttpsData(req) {
     return _json({ e: sendResult.error });
   }
 
-  // Poll for responses with timeout
+  // Poll for responses aggressively (no delays between polls)
   var pollPayload = {
     k: TUNNEL_AUTH_KEY,
     op: "poll",
     sid: req.sid
   };
 
-  var maxPolls = 50;  // Max polling attempts (about 5 seconds with delays)
+  var maxPolls = 100;  // Max polling attempts
   var pollCount = 0;
 
   while (pollCount < maxPolls) {
@@ -826,21 +826,19 @@ function _handleHttpsData(req) {
     try {
       var response = JSON.parse(pollResult.response);
       if (response.d || response.eof) {
-        // Got data or EOF - return it
+        // Got data or EOF - return it immediately
         return ContentService.createTextOutput(JSON.stringify(response))
           .setMimeType(ContentService.MimeType.JSON);
       }
-      // No data yet, continue polling
+      // No data yet, continue polling immediately
     } catch (parseErr) {
       return _json({ e: "Poll response parse error: " + String(parseErr) });
     }
 
-    // Wait a bit before polling again
-    Utilities.sleep(100);  // 100ms delay between polls
     pollCount++;
   }
 
-  // Timeout - return empty response
+  // Timeout - return empty response (don't block indefinitely)
   return ContentService.createTextOutput(JSON.stringify({}))
     .setMimeType(ContentService.MimeType.JSON);
 }

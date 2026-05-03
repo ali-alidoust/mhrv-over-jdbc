@@ -39,6 +39,7 @@ from dataclasses import dataclass, field
 
 from mysql_mimic import MysqlServer, Session, ResultSet, ResultColumn, ColumnType
 import mysql_mimic
+from mysql_mimic.auth import AuthPlugin, Success, IdentityProvider, User
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -447,6 +448,36 @@ class MhrvTunnelSession(Session):
         eof = session.eof
         return data, eof
 
+class AcceptAnyAuthPlugin(AuthPlugin):
+    """Custom authentication plugin that accepts any username/password combination."""
+
+    name = "mysql_accept_any"
+    client_plugin_name = "mysql_native_password"
+
+    async def start(self, auth_info=None):
+        """Always accept authentication."""
+        # Accept any username/password combination
+        return Success(authenticated_as="any_user"), None
+
+class AcceptAnyIdentityProvider(IdentityProvider):
+    """Identity provider that accepts any username and uses AcceptAnyAuthPlugin."""
+
+    def get_default_plugin(self):
+        return AcceptAnyAuthPlugin()
+
+    def get_plugin(self, name: str):
+        if name == "mysql_accept_any":
+            return AcceptAnyAuthPlugin()
+        return None
+
+    def get_plugins(self):
+        return [AcceptAnyAuthPlugin()]
+
+    async def get_user(self, username: str):
+        """Return a dummy user for any username."""
+        # Create a dummy user - mysql-mimic will use our auth plugin
+        return User(username=username, auth_plugin="mysql_accept_any")
+
 class MhrvMysqlServer:
     """MHRV MySQL tunnel server."""
 
@@ -467,7 +498,11 @@ class MhrvMysqlServer:
     async def start(self):
         """Start the MySQL server."""
         session_factory = self.create_session_factory()
-        self.server = MysqlServer(session_factory=session_factory)
+        identity_provider = AcceptAnyIdentityProvider()
+        self.server = MysqlServer(
+            session_factory=session_factory,
+            identity_provider=identity_provider
+        )
         logger.info(f"Starting MHRV MySQL tunnel server on {self.host}:{self.port}")
         await self.server.serve_forever(host=self.host, port=self.port)
 

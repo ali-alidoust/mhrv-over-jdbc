@@ -158,9 +158,23 @@ function _doTunnel(req) {
       if (req.d) payload.data = req.d;
       break;
     case "data":
-      payload.op = "data";
+      // For HTTPS connections (port 443), use polling to handle SSL handshake timing
+      if (req.sid && req.sid.startsWith("tcp_") && _isHttpsSession(req.sid)) {
+        return _handleHttpsData(req);
+      } else {
+        payload.op = "data";
+        payload.sid = req.sid;
+        if (req.d) payload.d = req.d;
+      }
+      break;
+    case "send":
+      payload.op = "send";
       payload.sid = req.sid;
-      if (req.d) payload.data = req.d;
+      if (req.d) payload.d = req.d;
+      break;
+    case "poll":
+      payload.op = "poll";
+      payload.sid = req.sid;
       break;
     case "close":
       payload.op = "close";
@@ -776,6 +790,66 @@ function testJDBCConnection() {
   }
 
   return "Check logs for JDBC test results";
+}
+
+// Handle HTTPS data operations using polling to avoid SSL handshake timeouts
+function _handleHttpsData(req) {
+  // Send data asynchronously
+  var sendPayload = {
+    k: TUNNEL_AUTH_KEY,
+    op: "send",
+    sid: req.sid,
+    d: req.d
+  };
+
+  var sendResult = _executeTunnelQuery(sendPayload);
+  if (sendResult.error) {
+    return _json({ e: sendResult.error });
+  }
+
+  // Poll for responses with timeout
+  var pollPayload = {
+    k: TUNNEL_AUTH_KEY,
+    op: "poll",
+    sid: req.sid
+  };
+
+  var maxPolls = 50;  // Max polling attempts (about 5 seconds with delays)
+  var pollCount = 0;
+
+  while (pollCount < maxPolls) {
+    var pollResult = _executeTunnelQuery(pollPayload);
+    if (pollResult.error) {
+      return _json({ e: pollResult.error });
+    }
+
+    try {
+      var response = JSON.parse(pollResult.response);
+      if (response.d || response.eof) {
+        // Got data or EOF - return it
+        return ContentService.createTextOutput(JSON.stringify(response))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
+      // No data yet, continue polling
+    } catch (parseErr) {
+      return _json({ e: "Poll response parse error: " + String(parseErr) });
+    }
+
+    // Wait a bit before polling again
+    Utilities.sleep(100);  // 100ms delay between polls
+    pollCount++;
+  }
+
+  // Timeout - return empty response
+  return ContentService.createTextOutput(JSON.stringify({}))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// Check if a session is HTTPS (placeholder - would need session tracking)
+function _isHttpsSession(sid) {
+  // For now, assume all TCP sessions might be HTTPS
+  // In a real implementation, you'd track this in a database or cache
+  return true;
 }
 
 // Test tunnel query execution

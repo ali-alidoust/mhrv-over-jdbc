@@ -102,20 +102,28 @@ class MhrvTunnelSession(Session):
             # Handle normal MySQL queries
             return await super().handle_query(sql, attrs)
 
-    async def _handle_tunnel_query(self, sql: str) -> Tuple[List[Tuple], List[str]]:
+    async def _handle_tunnel_query(self, sql: str) -> ResultSet:
         """Handle single tunnel operation."""
         # Extract the base64 payload from the query
         start = sql.find("(") + 1
         end = sql.rfind(")")
         if start == 0 or end == -1:
-            return [("ERROR", "Invalid tunnel query format")], ["status", "message"]
+            return ResultSet(
+                columns=[ResultColumn(name="status", type=ColumnType.VARCHAR),
+                        ResultColumn(name="message", type=ColumnType.VARCHAR)],
+                rows=[("ERROR", "Invalid tunnel query format")]
+            )
 
         payload_b64 = sql[start:end].strip("'\"")
         try:
             payload = base64.b64decode(payload_b64).decode('utf-8')
             request = json.loads(payload)
         except Exception as e:
-            return [("ERROR", f"Failed to decode payload: {e}")], ["status", "message"]
+            return ResultSet(
+                columns=[ResultColumn(name="status", type=ColumnType.VARCHAR),
+                        ResultColumn(name="message", type=ColumnType.VARCHAR)],
+                rows=[("ERROR", f"Failed to decode payload: {e}")]
+            )
 
         # Process the operation
         result = await self._process_operation(request)
@@ -124,22 +132,33 @@ class MhrvTunnelSession(Session):
         result_json = json.dumps(result)
         result_b64 = base64.b64encode(result_json.encode('utf-8')).decode('utf-8')
 
-        return [(result_b64,)], ["result"]
+        return ResultSet(
+            columns=[ResultColumn(name="result", type=ColumnType.VARCHAR)],
+            rows=[(result_b64,)]
+        )
 
-    async def _handle_batch_query(self, sql: str) -> Tuple[List[Tuple], List[str]]:
+    async def _handle_batch_query(self, sql: str) -> ResultSet:
         """Handle batch tunnel operations."""
         # Extract the base64 payload from the query
         start = sql.find("(") + 1
         end = sql.rfind(")")
         if start == 0 or end == -1:
-            return [("ERROR", "Invalid batch query format")], ["status", "message"]
+            return ResultSet(
+                columns=[ResultColumn(name="status", type=ColumnType.VARCHAR),
+                        ResultColumn(name="message", type=ColumnType.VARCHAR)],
+                rows=[("ERROR", "Invalid batch query format")]
+            )
 
         payload_b64 = sql[start:end].strip("'\"")
         try:
             payload = base64.b64decode(payload_b64).decode('utf-8')
             request = json.loads(payload)
         except Exception as e:
-            return [("ERROR", f"Failed to decode payload: {e}")], ["status", "message"]
+            return ResultSet(
+                columns=[ResultColumn(name="status", type=ColumnType.VARCHAR),
+                        ResultColumn(name="message", type=ColumnType.VARCHAR)],
+                rows=[("ERROR", f"Failed to decode payload: {e}")]
+            )
 
         # Process batch operations
         result = await self._process_batch(request)
@@ -148,7 +167,10 @@ class MhrvTunnelSession(Session):
         result_json = json.dumps(result)
         result_b64 = base64.b64encode(result_json.encode('utf-8')).decode('utf-8')
 
-        return [(result_b64,)], ["result"]
+        return ResultSet(
+            columns=[ResultColumn(name="result", type=ColumnType.VARCHAR)],
+            rows=[(result_b64,)]
+        )
 
     async def _process_operation(self, op: Dict[str, Any]) -> Dict[str, Any]:
         """Process a single tunnel operation."""
@@ -169,6 +191,21 @@ class MhrvTunnelSession(Session):
             return await self._handle_udp_data(sid)
         else:
             return {"e": "unknown op: {}".format(op_type), "code": CODE_UNSUPPORTED_OP}
+
+    async def _drain_session_if_available(self, sid: str) -> Dict[str, Any]:
+        """Drain any available data from a session without blocking."""
+        if sid in self.tcp_sessions:
+            session = self.tcp_sessions[sid]
+            drained_data, eof = await self._drain_tcp_now(session)
+            result = {}
+            if drained_data:
+                result["d"] = base64.b64encode(drained_data).decode('utf-8')
+            if eof:
+                result["eof"] = True
+            return result
+        elif sid in self.udp_sessions:
+            return await self._handle_udp_data(sid)
+        return {}
 
     async def _handle_udp_open(self, op: Dict[str, Any]) -> Dict[str, Any]:
         """Handle udp_open operation - create UDP session."""
@@ -225,6 +262,16 @@ class MhrvTunnelSession(Session):
         for op in ops:
             result = await self._process_operation(op)
             results.append(result)
+
+        # After processing all operations, drain any available data from all sessions
+        # This ensures that responses from remote servers are returned to the client
+        for i, op in enumerate(ops):
+            sid = op.get("sid")
+            if sid and results[i].get("e") is None:  # Only drain if operation was successful
+                drain_result = await self._drain_session_if_available(sid)
+                if drain_result:
+                    # Merge drain results with the operation result
+                    results[i].update(drain_result)
 
         return {"r": results}
 
@@ -433,37 +480,41 @@ class MhrvTunnelSession(Session):
 
         if sid in self.tcp_sessions:
             session = self.tcp_sessions[sid]
-            if not session.eof:
-                try:
-                    session.writer.write(data)
-                    await session.writer.drain()
-                    session.last_active = time.time()
+            if session.eof:
+                return {"e": "SESSION_CLOSED"}
+            try:
+                session.writer.write(data)
+                await session.writer.drain()
+                session.last_active = time.time()
 
-                    # Drain any available data
-                    drained_data, eof = await self._drain_tcp_now(session)
-                    if drained_data or eof:
-                        result = {"d": base64.b64encode(drained_data).decode('utf-8') if drained_data else None}
-                        if eof:
-                            result["eof"] = True
-                        return result
-                except Exception as e:
-                    logger.error(f"Write failed for session {sid}: {e}")
-                    session.eof = True
-                    session.notify.set()
+                # Always drain any available data after writing
+                drained_data, eof = await self._drain_tcp_now(session)
+                result = {}
+                if drained_data:
+                    result["d"] = base64.b64encode(drained_data).decode('utf-8')
+                if eof:
+                    result["eof"] = True
+                return result
+            except Exception as e:
+                logger.error(f"Write failed for session {sid}: {e}")
+                session.eof = True
+                session.notify.set()
+                return {"e": "WRITE_FAILED"}
         elif sid in self.udp_sessions:
             session = self.udp_sessions[sid]
-            if not session.eof:
-                try:
-                    session.transport.sendto(data, session.remote_addr)
-                    session.last_active = time.time()
-                except Exception as e:
-                    logger.error(f"UDP write failed: {e}")
-                    session.eof = True
-                    session.notify.set()
+            if session.eof:
+                return {"e": "SESSION_CLOSED"}
+            try:
+                session.transport.sendto(data, session.remote_addr)
+                session.last_active = time.time()
+                return {}  # Success, no data expected for UDP send
+            except Exception as e:
+                logger.error(f"UDP write failed: {e}")
+                session.eof = True
+                session.notify.set()
+                return {"e": "UDP_WRITE_FAILED"}
         else:
             return {"e": "SESSION_NOT_FOUND"}
-
-        return {}
 
     async def _handle_close(self, sid: str) -> Dict[str, Any]:
         """Handle close operation."""

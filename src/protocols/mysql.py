@@ -85,6 +85,8 @@ class MhrvTunnelSession(Session):
         self.tcp_sessions: Dict[str, TcpSession] = {}
         self.udp_sessions: Dict[str, UdpSession] = {}
         self.auth_key: Optional[str] = None  # Should be set from environment
+        self._cleanup_task: Optional[asyncio.Task] = None
+        self._start_cleanup_task()
 
     async def handle_query(self, sql: str, attrs: Dict[str, str]) -> Any:
         """Handle MySQL queries, specifically looking for MHRV tunnel queries."""
@@ -341,12 +343,13 @@ class MhrvTunnelSession(Session):
                     await session.writer.drain()
                     session.last_active = time.time()
 
-                    # For SSL/TLS handshakes, don't drain immediately - let client poll separately
-                    # This prevents timing issues with SSL handshake
-                    # Drain any available data only if buffer is not empty (from previous reads)
+                    # Drain any available data
                     drained_data, eof = await self._drain_tcp_now(session)
-                    if drained_data:
-                        return {"d": base64.b64encode(drained_data).decode('utf-8'), "eof": eof}
+                    if drained_data or eof:
+                        result = {"d": base64.b64encode(drained_data).decode('utf-8') if drained_data else None}
+                        if eof:
+                            result["eof"] = True
+                        return result
                 except Exception as e:
                     logger.error(f"Write failed for session {sid}: {e}")
                     session.eof = True
@@ -461,6 +464,68 @@ class MhrvTunnelSession(Session):
         session.buffer.clear()
         eof = session.eof
         return data, eof
+
+    def _start_cleanup_task(self):
+        """Start the background cleanup task."""
+        if self._cleanup_task is None or self._cleanup_task.done():
+            self._cleanup_task = asyncio.create_task(self._cleanup_idle_sessions())
+
+    async def _cleanup_idle_sessions(self):
+        """Background task to clean up idle sessions."""
+        try:
+            while True:
+                await asyncio.sleep(30)  # Check every 30 seconds
+                current_time = time.time()
+
+                # Clean up idle TCP sessions
+                tcp_to_remove = []
+                for sid, session in self.tcp_sessions.items():
+                    if current_time - session.last_active > LONGPOLL_DEADLINE:
+                        logger.info(f"Cleaning up idle TCP session {sid}")
+                        tcp_to_remove.append(sid)
+
+                for sid in tcp_to_remove:
+                    if sid in self.tcp_sessions:
+                        session = self.tcp_sessions[sid]
+                        try:
+                            session.writer.close()
+                            await session.writer.wait_closed()
+                        except Exception:
+                            pass
+                        session.eof = True
+                        session.notify.set()
+                        # Cancel the reader task
+                        if session.reader_task and not session.reader_task.done():
+                            session.reader_task.cancel()
+                            try:
+                                await session.reader_task
+                            except asyncio.CancelledError:
+                                pass
+                        del self.tcp_sessions[sid]
+
+                # Clean up idle UDP sessions
+                udp_to_remove = []
+                for sid, session in self.udp_sessions.items():
+                    if current_time - session.last_active > LONGPOLL_DEADLINE:
+                        logger.info(f"Cleaning up idle UDP session {sid}")
+                        udp_to_remove.append(sid)
+
+                for sid in udp_to_remove:
+                    if sid in self.udp_sessions:
+                        session = self.udp_sessions[sid]
+                        try:
+                            session.transport.close()
+                        except Exception:
+                            pass
+                        session.eof = True
+                        session.notify.set()
+                        del self.udp_sessions[sid]
+
+        except asyncio.CancelledError:
+            # Task was cancelled
+            raise
+        except Exception as e:
+            logger.error(f"Cleanup task error: {e}")
 
 class AcceptAnyAuthPlugin(AuthPlugin):
     """Custom authentication plugin that accepts any username/password combination."""

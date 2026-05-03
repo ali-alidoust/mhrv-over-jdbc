@@ -309,8 +309,9 @@ class MhrvTunnelSession(Session):
             # Phase 1: Wait for any session to become readable or EOF
             deadline = ACTIVE_DRAIN_DEADLINE if has_writes_or_connects else LONGPOLL_DEADLINE
             try:
+                wait_tasks = [asyncio.create_task(n.wait()) for n in notifies]
                 await asyncio.wait(
-                    [n.wait() for n in notifies],
+                    wait_tasks,
                     timeout=deadline,
                     return_when=asyncio.FIRST_COMPLETED
                 )

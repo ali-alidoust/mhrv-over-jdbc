@@ -65,6 +65,7 @@ class TcpSession:
     eof: bool = False
     last_active: float = field(default_factory=time.time)
     reader_task: Optional[asyncio.Task] = None
+    response_queue: asyncio.Queue = field(default_factory=lambda: asyncio.Queue(maxsize=100))
 
 @dataclass
 class UdpSession:
@@ -160,6 +161,10 @@ class MhrvTunnelSession(Session):
             return await self._handle_connect_data(op)
         elif op_type == "data":
             return await self._handle_data(sid, op)
+        elif op_type == "send":
+            return await self._handle_send(sid, op)
+        elif op_type == "poll":
+            return await self._handle_poll(sid)
         elif op_type == "close":
             return await self._handle_close(sid)
         elif op_type == "udp_data":
@@ -343,6 +348,14 @@ class MhrvTunnelSession(Session):
                     await session.writer.drain()
                     session.last_active = time.time()
 
+                    # For SSL/TLS handshakes, wait a short time for responses
+                    # This helps with timing-sensitive protocols like HTTPS
+                    try:
+                        await asyncio.wait_for(session.notify.wait(), timeout=0.1)
+                        session.notify.clear()
+                    except asyncio.TimeoutError:
+                        pass  # No data available yet
+
                     # Drain any available data
                     drained_data, eof = await self._drain_tcp_now(session)
                     if drained_data or eof:
@@ -368,6 +381,85 @@ class MhrvTunnelSession(Session):
             return {"e": "SESSION_NOT_FOUND"}
 
         return {}
+
+    async def _handle_send(self, sid: str, op: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle send operation (async data send, no response waiting)."""
+        data_b64 = op.get("d")
+        if not data_b64:
+            return {"e": "MISSING_DATA"}
+
+        try:
+            data = base64.b64decode(data_b64)
+        except Exception as e:
+            return {"e": "INVALID_DATA_ENCODING"}
+
+        if sid in self.tcp_sessions:
+            session = self.tcp_sessions[sid]
+            if not session.eof:
+                try:
+                    session.writer.write(data)
+                    await session.writer.drain()
+                    session.last_active = time.time()
+                except Exception as e:
+                    logger.error(f"Send failed for session {sid}: {e}")
+                    session.eof = True
+                    session.notify.set()
+        elif sid in self.udp_sessions:
+            session = self.udp_sessions[sid]
+            if not session.eof:
+                try:
+                    session.transport.sendto(data, session.remote_addr)
+                    session.last_active = time.time()
+                except Exception as e:
+                    logger.error(f"UDP send failed: {e}")
+                    session.eof = True
+                    session.notify.set()
+        else:
+            return {"e": "SESSION_NOT_FOUND"}
+
+        return {}
+
+    async def _handle_poll(self, sid: str) -> Dict[str, Any]:
+        """Handle poll operation (check for pending responses)."""
+        if sid not in self.tcp_sessions:
+            return {"eof": True}
+
+        session = self.tcp_sessions[sid]
+        responses = []
+        max_responses = 10  # Limit responses per poll
+
+        try:
+            for _ in range(max_responses):
+                if session.response_queue.empty():
+                    break
+                response = session.response_queue.get_nowait()
+                responses.append(response)
+        except asyncio.QueueEmpty:
+            pass
+
+        # Check if session is EOF
+        eof = session.eof
+        if eof and session.response_queue.empty():
+            # Clean up EOF session
+            del self.tcp_sessions[sid]
+
+        result = {}
+        if responses:
+            # Combine all data responses
+            combined_data = b""
+            has_eof = False
+            for response in responses:
+                if "d" in response:
+                    combined_data += response["d"]
+                if response.get("eof"):
+                    has_eof = True
+
+            if combined_data:
+                result["d"] = base64.b64encode(combined_data).decode('utf-8')
+            if has_eof:
+                result["eof"] = True
+
+        return result
 
     async def _handle_close(self, sid: str) -> Dict[str, Any]:
         """Handle close operation."""
@@ -436,11 +528,27 @@ class MhrvTunnelSession(Session):
             while not session.eof:
                 data = await session.stream.read(8192)
                 if not data:
-                    # EOF
+                    # EOF - put in response queue for polling
+                    try:
+                        session.response_queue.put_nowait({"eof": True})
+                    except asyncio.QueueFull:
+                        pass
                     session.eof = True
                     session.notify.set()
                     break
 
+                # Put data in response queue for polling
+                try:
+                    session.response_queue.put_nowait({"d": data})
+                except asyncio.QueueFull:
+                    # Queue full, drop oldest responses to make room
+                    try:
+                        session.response_queue.get_nowait()
+                        session.response_queue.put_nowait({"d": data})
+                    except asyncio.QueueEmpty:
+                        pass
+
+                # Also keep in buffer for backward compatibility with sync data operation
                 session.buffer.extend(data)
                 session.notify.set()
 

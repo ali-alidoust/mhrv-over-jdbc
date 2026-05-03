@@ -263,6 +263,33 @@ class MhrvTunnelSession(Session):
             result = await self._process_operation(op)
             results.append(result)
 
+        # Check if batch has writes or connects (active drain)
+        has_writes_or_connects = any(
+            op.get("op") in ("connect", "connect_data", "data", "udp_open")
+            for op in ops
+        )
+
+        # Wait for drain data to be available
+        drain_deadline = 2.0 if has_writes_or_connects else 15.0  # seconds
+
+        # Collect all session notifies
+        notifies = []
+        for session in self.tcp_sessions.values():
+            notifies.append(session.notify)
+        for session in self.udp_sessions.values():
+            notifies.append(session.notify)
+
+        if notifies:
+            try:
+                # Wait for any session to have data available
+                await asyncio.wait(
+                    [notify.wait() for notify in notifies],
+                    timeout=drain_deadline,
+                    return_when=asyncio.FIRST_COMPLETED
+                )
+            except asyncio.TimeoutError:
+                pass
+
         # After processing all operations, drain any available data from all sessions
         # This ensures that responses from remote servers are returned to the client
         for i, op in enumerate(ops):
